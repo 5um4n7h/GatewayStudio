@@ -5,6 +5,9 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
+import net.logstash.logback.marker.Markers;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -12,10 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE) // Ensures execution before Gateway routing logic
@@ -24,10 +24,14 @@ public class GlobalRequestIdFilter extends OncePerRequestFilter {
     private static final String REQUEST_ID_HEADER = "X-Request-Id";
     private static final String MDC_KEY = "requestId";
 
+    private static final Logger auditLogger = LoggerFactory.getLogger("AUDIT_LOGGER");
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+
+        long startTime = System.currentTimeMillis();
 
         // 1. Generate a brand new, unique UUID for this specific thread/request
         String requestId = UUID.randomUUID().toString();
@@ -70,7 +74,24 @@ public class GlobalRequestIdFilter extends OncePerRequestFilter {
             // 5. Hand the mutated request off to Spring Cloud Gateway Server MVC
             filterChain.doFilter(mutableRequest, response);
         } finally {
+            // 2. Executes ONLY after request is fully processed
+            long latency = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> auditData = new HashMap<>();
+            auditData.put("path", request.getRequestURI());
+            auditData.put("method", request.getMethod());
+            auditData.put("statusCode", response.getStatus());
+            auditData.put("latencyMs", latency);
+            auditData.put("clientIp", request.getRemoteAddr());
+            auditData.put("userAgent", request.getHeader("User-Agent"));
+
+            // Writes structured JSON line asynchronously to logs/audit.log
+            auditLogger.info(Markers.appendEntries(auditData), "HTTP Request Completed");
+
+
             MDC.remove(MDC_KEY);
+
+
         }
     }
 }
