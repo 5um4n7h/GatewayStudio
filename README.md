@@ -1,21 +1,58 @@
-## 1. Description
+# GatewayStudio
 
-GatewayStudio is a self-service API gateway platform being developed using **Java 25, Spring Boot, and Spring Cloud Gateway Server Web MVC**, designed to provide a centralized and controlled entry point for backend APIs. The project focuses on simplifying API routing, request handling, service integration, and gateway-level policies while providing a foundation for operational visibility and future self-service API management.
+> **The modern, high-throughput, self-service API Gateway platform built on Java 25 and Spring Cloud Gateway Server Web MVC.**
 
-## 2. Current State
+## What is GatewayStudio?
 
-The project currently has a working **Spring Cloud Gateway Server Web MVC** implementation running on the Servlet stack with **Java Virtual Threads**.  
-A public `/product/{id}` endpoint is routed to an internal `/catalog/product/{id}` API through path rewriting.  
-**WireMock** is embedded in the project to simulate upstream services and test gateway behavior locally.  
-A global request-ID filter generates and propagates `X-Request-ID` and stores the identifier in MDC for request correlation and logging.  
-The gateway proxy uses Spring `RestClient` with the **JDK HttpClient**, including configurable connection and upstream response timeouts.  
-**Spring Boot Actuator** is also integrated as the foundation for health and operational monitoring.
+GatewayStudio is a next-generation, self-service API Gateway platform engineered to serve as a unified, high-performance entry point for backend microservices. Built on **Java 25** and **Spring Cloud Gateway Server Web MVC**, GatewayStudio simplifies API routing, path rewriting, upstream service integration, and gateway-level policy enforcement while providing a foundation for operational visibility and developer self-service management.
 
-## 3. Future Scope
 
-The gateway will evolve toward configurable **service and route management** through a self-service interface.  
-Authentication and authorization mechanisms will be introduced for API consumers.  
-Gateway-level traffic policies such as rate limiting and resilience controls will be added.  
-Persistent configuration and controlled route publishing will be introduced as the platform matures.  
-Operational visibility will be expanded with gateway metrics, request analytics, and usage information.  
-The platform will eventually support production-oriented deployment and scaling capabilities.
+### Current Request Flow
+
+```mermaid
+flowchart LR
+    C[Client Request] --> G[GatewayStudio]
+    G --> R[Route Matching]
+    R --> RW[Path Rewriting]
+    RW --> P[Gateway Proxy]
+    P --> U[Upstream API / WireMock]
+
+    G -.-> ID[X-Request-ID + MDC]
+    P -.-> HTTP[Spring RestClient + JDK HttpClient]
+```
+
+### Key Capabilities Implemented
+
+- **Routing & Path Rewriting**  
+  Translates public-facing routes into internal upstream endpoints.
+
+- **Embedded Upstream Mocking**  
+  Integrates WireMock for local integration testing, upstream response simulation, delay simulation, and fault scenarios.
+
+- **Request Correlation & Tracing**  
+  A global request filter generates and propagates `X-Request-ID` while maintaining an MDC context for request correlation across gateway logs and downstream services.
+
+- **Audit logging**  
+  API request metadata logs are storing in JSON format, for further process and analytics.
+
+## 🚀 Roadmap & What's Next
+
+GatewayStudio is evolving from a core proxy engine into a full-featured API management platform.
+
+- 🛠️ **Self-Service Route & Service Management**  
+  Dynamic route and upstream service management through a self-service administrative interface.
+
+- 🔐 **Authentication & Authorization**  
+  Edge security capabilities including API authentication, OAuth2/JWT integration, and access controls.
+
+- 🚦 **Traffic Shaping & Resilience Policies**  
+  Rate limiting, request throttling, circuit breaking, retries, and other gateway-level policies.
+
+- 💾 **Persistent Dynamic Configuration**  
+  Database-backed configuration and controlled route publishing without requiring application restarts.
+
+- 📊 **Analytics & Audit Logging**  
+  Request analytics, audit trails, and enhanced operational visibility.
+
+- ☁️ **Production-Grade Cloud Deployment**  
+  Containerized deployment with support for scalable, cloud-native environments.
