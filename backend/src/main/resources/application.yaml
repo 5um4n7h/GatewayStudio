@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: GatewayStudio
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: product-route
+              uri: http://localhost:8081
+              predicates:
+                - Path=/product/**
+              filters:
+                - RewritePath=/product/(?<id>.*), /catalog/product/$\{id}
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    root: DEBUG
+
