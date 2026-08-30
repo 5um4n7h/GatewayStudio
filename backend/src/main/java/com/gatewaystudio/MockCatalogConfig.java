@@ -10,7 +10,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.*;
 public class MockCatalogConfig {
 
     @Bean
-    public Object configureMockCatalog(WireMockServer wireMockServer) {
+    public Object configureMockCatalog(WireMockServer wireMockServer) throws InterruptedException {
 
         wireMockServer.stubFor(
                 get(urlPathMatching("/catalog/product/[0-9]+"))
@@ -18,6 +18,7 @@ public class MockCatalogConfig {
                                 aResponse()
                                         .withStatus(200)
                                         .withHeader("Content-Type", "application/json")
+                                        //.withFixedDelay(4000)
                                         .withBody("""
                                                 {
                                                   "id": 123,
