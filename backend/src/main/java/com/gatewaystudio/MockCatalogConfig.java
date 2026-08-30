@@ -19,13 +19,23 @@ public class MockCatalogConfig {
                                         .withStatus(200)
                                         .withHeader("Content-Type", "application/json")
                                         .withBody("""
-                                            {
-                                              "id": 123,
-                                              "name": "Demo Product",
-                                              "description": "Mock catalog product"
-                                            }
-                                            """)
+                                                {
+                                                  "id": 123,
+                                                  "name": "Demo Product",
+                                                  "description": "Mock catalog product"
+                                                }
+                                                """)
                         )
+        );
+
+        wireMockServer.addMockServiceRequestListener(
+                (request, response) -> {
+
+                    System.out.println(
+                            "WireMock received X-Request-ID: "
+                                    + request.getHeader("X-Request-ID")
+                    );
+                }
         );
 
         return new Object();
