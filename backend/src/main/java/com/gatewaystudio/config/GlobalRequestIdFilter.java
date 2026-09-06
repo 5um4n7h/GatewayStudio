@@ -1,4 +1,4 @@
-package com.gatewaystudio;
+package com.gatewaystudio.config;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

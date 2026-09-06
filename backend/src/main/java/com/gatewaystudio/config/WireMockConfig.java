@@ -1,4 +1,4 @@
-package com.gatewaystudio;
+package com.gatewaystudio.config;
 
 
 import com.github.tomakehurst.wiremock.WireMockServer;

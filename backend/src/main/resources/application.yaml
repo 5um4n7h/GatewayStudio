@@ -1,28 +1,48 @@
+server:
+  port: 8080
+  # Enable Virtual Threads for Java 21+ / Java 25 concurrency
+  tomcat:
+    threads:
+      max: 200
+
 spring:
   application:
-    name: GatewayStudio
-  cloud:
-    gateway:
-      server:
-        webmvc:
-          routes:
-            - id: product-route
-              uri: http://localhost:8081
-              predicates:
-                - Path=/product/**
-              filters:
-                - RewritePath=/product/(?<id>.*), /catalog/product/$\{id}
+    name: gateway-studio
+
+  # Enable Virtual Threads globally
   threads:
     virtual:
       enabled: true
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health
+  # Database Configuration (Docker PostgreSQL)
+  datasource:
+    # Use "localhost" if running app on host machine.
+    # Change "localhost" to your docker service name (e.g., "postgres") if running inside Docker network.
+    url: jdbc:postgresql://localhost:5432/gateway_db
+    username: gateway_user
+    password: gateway_password
+    driver-class-name: org.postgresql.Driver
+
+  # JPA / Hibernate Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate # Database schema managed strictly by Flyway
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Flyway Migrations
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+# Spring Cloud Gateway MVC Configuration
+spring.cloud.gateway.mvc:
+  enabled: true
 
 logging:
   level:
-    root: ERROR
-
+    root: INFO

@@ -1,4 +1,4 @@
-package com.gatewaystudio;
+package com.gatewaystudio.service;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;

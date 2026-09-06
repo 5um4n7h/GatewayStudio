@@ -1,11 +1,10 @@
-package com.gatewaystudio;
+package com.gatewaystudio.config;
 
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.servlet.function.ServerResponse;
 
 import java.net.http.HttpTimeoutException;
 
