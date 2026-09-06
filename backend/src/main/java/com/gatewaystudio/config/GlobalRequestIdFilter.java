@@ -18,13 +18,14 @@ import java.io.IOException;
 import java.util.*;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE) // Ensures execution before Gateway routing logic
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalRequestIdFilter extends OncePerRequestFilter {
 
     private static final String REQUEST_ID_HEADER = "X-Request-Id";
     private static final String MDC_KEY = "requestId";
 
     private static final Logger auditLogger = LoggerFactory.getLogger("AUDIT_LOGGER");
+    private static final Logger log = LoggerFactory.getLogger(GlobalRequestIdFilter.class);
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -32,17 +33,15 @@ public class GlobalRequestIdFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
 
         long startTime = System.currentTimeMillis();
+        String requestUri = request.getRequestURI();
+        String method = request.getMethod();
 
-        // 1. Generate a brand new, unique UUID for this specific thread/request
         String requestId = UUID.randomUUID().toString();
-
-        // 2. Put it in MDC so your current Gateway console logs print this ID automatically
         MDC.put(MDC_KEY, requestId);
-
-        // 3. Optional: Send the same ID back to the calling client in the response header
         response.setHeader(REQUEST_ID_HEADER, requestId);
 
-        // 4. Wrap and mutate the HTTP request to forward the header downstream
+        log.info("Incoming request: method={}, uri={}, requestId={}", method, requestUri, requestId);
+
         HttpServletRequestWrapper mutableRequest = new HttpServletRequestWrapper(request) {
             @Override
             public String getHeader(String name) {
@@ -71,27 +70,24 @@ public class GlobalRequestIdFilter extends OncePerRequestFilter {
         };
 
         try {
-            // 5. Hand the mutated request off to Spring Cloud Gateway Server MVC
             filterChain.doFilter(mutableRequest, response);
         } finally {
-            // 2. Executes ONLY after request is fully processed
             long latency = System.currentTimeMillis() - startTime;
 
             Map<String, Object> auditData = new HashMap<>();
-            auditData.put("path", request.getRequestURI());
-            auditData.put("method", request.getMethod());
+            auditData.put("path", requestUri);
+            auditData.put("method", method);
             auditData.put("statusCode", response.getStatus());
             auditData.put("latencyMs", latency);
             auditData.put("clientIp", request.getRemoteAddr());
             auditData.put("userAgent", request.getHeader("User-Agent"));
+            auditData.put("requestId", requestId);
 
-            // Writes structured JSON line asynchronously to logs/audit.log
             auditLogger.info(Markers.appendEntries(auditData), "HTTP Request Completed");
-
+            log.info("Completed request: method={}, uri={}, status={}, latencyMs={}, requestId={}",
+                    method, requestUri, response.getStatus(), latency, requestId);
 
             MDC.remove(MDC_KEY);
-
-
         }
     }
 }

@@ -46,3 +46,4 @@ spring.cloud.gateway.mvc:
 logging:
   level:
     root: INFO
+    com.gatewaystudio: INFO
