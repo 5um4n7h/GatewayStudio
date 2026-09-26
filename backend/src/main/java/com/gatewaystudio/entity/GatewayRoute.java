@@ -1,12 +1,15 @@
 package com.gatewaystudio.entity;
 
-
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
-@Data
 @Table(name = "gateway_routes")
+@Data
+@Getter
+@Setter
 public class GatewayRoute {
 
     @Id

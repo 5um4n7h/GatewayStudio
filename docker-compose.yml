@@ -1,39 +1,86 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: gateway_postgres
-    environment:
-      POSTGRES_DB: gateway_db
-      POSTGRES_USER: gateway_user
-      POSTGRES_PASSWORD: gateway_password
+  # UI Layer - React + Nginx (production-ready, cached builds)
+  gateway-studio-frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: gateway-studio-frontend
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "3000:80"
+    environment:
+      VITE_BACKEND_URL: http://gateway-studio-backend:8080
+    depends_on:
+      - gateway-studio-backend
+    networks:
+      - gateway-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gateway_user -d gateway_db"]
-      interval: 5s
-      timeout: 5s
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 15s
+    restart: unless-stopped
 
-  gateway-studio:
+  # Backend API - Spring Boot Gateway (production-ready, cached builds)
+  gateway-studio-backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: gateway_studio
+    container_name: gateway-studio-backend
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gateway_db
-      SPRING_DATASOURCE_USERNAME: gateway_user
-      SPRING_DATASOURCE_PASSWORD: gateway_password
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      SPRING_FLYWAY_ENABLED: "true"
-    volumes:
-      - ./logs:/app/logs # Mounts audit log folder to host disk
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gateway_studio
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: admin123
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_PROFILES_ACTIVE: docker
+      DEPLOYMENT: docker
+      BACKEND_URL: http://gateway-studio-backend:8080
+      LOGGING_LEVEL_COM_GATEWAYSTUDIO: INFO
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK: WARN
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - gateway-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  # Database - PostgreSQL (production-ready)
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: gateway_studio
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gateway-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d gateway_studio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+    driver: local
+
+networks:
+  gateway-network:
+    name: gateway-network
+    driver: bridge

@@ -40,19 +40,29 @@ public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<Serv
                     route.getId(), route.getRouteName(), route.getPublicPath(), route.getTargetUri(),
                     route.getStripPrefix(), route.isEnabled());
 
-            builder.add(
-                    GatewayRouterFunctions.route(route.getId())
-                            .route(
-                                    GatewayRequestPredicates.path(route.getPublicPath()),
-                                    HandlerFunctions.http(route.getTargetUri())
-                            )
-                            .build()
-            );
+            var routeBuilder = GatewayRouterFunctions.route(route.getId())
+                    .route(
+                            GatewayRequestPredicates.path(route.getPublicPath()),
+                            HandlerFunctions.http(route.getTargetUri())
+                    );
 
             if (route.getStripPrefix() > 0) {
                 log.info("Applying stripPrefix={} for route {}", route.getStripPrefix(), route.getId());
-                builder.filter(stripPrefix(route.getStripPrefix()));
+                routeBuilder = routeBuilder.filter(stripPrefix(route.getStripPrefix()));
             }
+
+            builder.add(routeBuilder.build());
+        }
+
+        // If no routes are configured, add a default health check route to prevent build() failure
+        if (activeRoutes.isEmpty()) {
+            log.warn("No active routes found in database. Adding default health check route.");
+            builder.add(
+                RouterFunctions.route()
+                    .GET("/health", request -> ServerResponse.ok()
+                        .body("Gateway is running. No routes configured. Please add routes via API."))
+                    .build()
+            );
         }
 
         log.info("Dynamic gateway route registration complete. Built router with {} routes.", activeRoutes.size());

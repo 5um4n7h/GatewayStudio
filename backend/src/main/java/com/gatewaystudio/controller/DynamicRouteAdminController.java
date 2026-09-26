@@ -5,6 +5,7 @@ import com.gatewaystudio.entity.GatewayRoute;
 import com.gatewaystudio.repository.JpaGatewayRoute;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cloud.context.refresh.ContextRefresher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,7 +21,8 @@ public class DynamicRouteAdminController {
     private final JpaGatewayRoute repository;
     private final ContextRefresher contextRefresher;
 
-    public DynamicRouteAdminController(JpaGatewayRoute repository, ContextRefresher contextRefresher) {
+    public DynamicRouteAdminController(JpaGatewayRoute repository,
+                                      @Qualifier("configDataContextRefresher") ContextRefresher contextRefresher) {
         this.repository = repository;
         this.contextRefresher = contextRefresher;
     }
