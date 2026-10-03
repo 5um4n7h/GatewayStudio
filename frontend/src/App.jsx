@@ -10,6 +10,9 @@ const emptyForm = {
   publicPath: "/users/**",
   targetUri: "http://httpbin.org",
   stripPrefix: 1,
+  rateLimitRequests: 100,
+  rateLimitWindowSeconds: 60,
+  maxPayloadSizeMb: 10,
   enabled: true,
 };
 
@@ -89,6 +92,9 @@ export default function App() {
     const payload = {
       ...form,
       stripPrefix: Number(form.stripPrefix),
+      rateLimitRequests: Number(form.rateLimitRequests),
+      rateLimitWindowSeconds: Number(form.rateLimitWindowSeconds),
+      maxPayloadSizeMb: Number(form.maxPayloadSizeMb),
       enabled: Boolean(form.enabled),
     };
 
@@ -235,6 +241,47 @@ export default function App() {
               </div>
             </div>
 
+            <div className="form-row">
+              <div className="field-group">
+                <label>Rate Limit (requests)</label>
+                <input
+                  type="number"
+                  name="rateLimitRequests"
+                  value={form.rateLimitRequests}
+                  onChange={handleInputChange}
+                  min="1"
+                  max="10000"
+                  placeholder="100"
+                />
+              </div>
+
+              <div className="field-group">
+                <label>Rate Limit Window (seconds)</label>
+                <input
+                  type="number"
+                  name="rateLimitWindowSeconds"
+                  value={form.rateLimitWindowSeconds}
+                  onChange={handleInputChange}
+                  min="1"
+                  max="3600"
+                  placeholder="60"
+                />
+              </div>
+
+              <div className="field-group">
+                <label>Max Payload (MB)</label>
+                <input
+                  type="number"
+                  name="maxPayloadSizeMb"
+                  value={form.maxPayloadSizeMb}
+                  onChange={handleInputChange}
+                  min="1"
+                  max="500"
+                  placeholder="10"
+                />
+              </div>
+            </div>
+
             <button className="btn btn-primary" type="submit" disabled={saving}>
               {saving ? "Adding..." : "Add Route"}
             </button>
@@ -268,6 +315,8 @@ export default function App() {
                     <th>Public Path</th>
                     <th>Target</th>
                     <th>Strip</th>
+                    <th>Rate Limit</th>
+                    <th>Payload (MB)</th>
                     <th>Status</th>
                     <th>Updated</th>
                     <th>Action</th>
@@ -283,6 +332,10 @@ export default function App() {
                       <td>{route.publicPath}</td>
                       <td>{route.targetUri}</td>
                       <td>{route.stripPrefix}</td>
+                      <td>
+                        <small>{route.rateLimitRequests}/{route.rateLimitWindowSeconds}s</small>
+                      </td>
+                      <td>{route.maxPayloadSizeMb}</td>
                       <td>
                         <span className={`status-badge ${route.enabled ? "enabled" : "disabled"}`}>
                           {route.enabled ? "Enabled" : "Disabled"}

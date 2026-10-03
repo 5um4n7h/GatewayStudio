@@ -226,7 +226,7 @@ button, input {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 120px;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   align-items: end;
 }
@@ -335,6 +335,10 @@ button, input {
   .content-grid {
     grid-template-columns: 1fr;
   }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -353,5 +357,14 @@ button, input {
 
   .form-row {
     grid-template-columns: 1fr;
+  }
+
+  .table-wrap {
+    font-size: 12px;
+  }
+
+  .route-table th,
+  .route-table td {
+    padding: 8px 10px;
   }
 }

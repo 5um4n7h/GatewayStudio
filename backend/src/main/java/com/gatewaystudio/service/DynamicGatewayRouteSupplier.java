@@ -1,21 +1,27 @@
 package com.gatewaystudio.service;
 
 import com.gatewaystudio.entity.GatewayRoute;
+import com.gatewaystudio.filter.PayloadSizeFilter;
+import com.gatewaystudio.filter.RateLimitFilter;
 import com.gatewaystudio.repository.JpaGatewayRoute;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.server.mvc.handler.GatewayRouterFunctions;
-import org.springframework.cloud.gateway.server.mvc.handler.HandlerFunctions;
 import org.springframework.cloud.gateway.server.mvc.predicate.GatewayRequestPredicates;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.function.RouterFunction;
 import org.springframework.web.servlet.function.RouterFunctions;
+import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Supplier;
-
-import static org.springframework.cloud.gateway.server.mvc.filter.FilterFunctions.stripPrefix;
 
 @Component
 public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<ServerResponse>> {
@@ -23,6 +29,10 @@ public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<Serv
     private static final Logger log = LoggerFactory.getLogger(DynamicGatewayRouteSupplier.class);
 
     private final JpaGatewayRoute repository;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_2)
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
 
     public DynamicGatewayRouteSupplier(JpaGatewayRoute repository) {
         this.repository = repository;
@@ -36,36 +46,133 @@ public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<Serv
         log.info("Loading dynamic gateway routes from database. Active route count: {}", activeRoutes.size());
 
         for (GatewayRoute route : activeRoutes) {
-            log.info("Registering route: id={}, name={}, publicPath={}, targetUri={}, stripPrefix={}, enabled={}",
-                    route.getId(), route.getRouteName(), route.getPublicPath(), route.getTargetUri(),
-                    route.getStripPrefix(), route.isEnabled());
+            log.info("Registering route: id={}, name={}, publicPath={}, targetUri={}, stripPrefix={}, rateLimit={}/{}, maxPayloadSize={} MB, enabled={}",
+                    route.getId(),
+                    route.getPublicPath(),
+                    route.getTargetUri(),
+                    route.getStripPrefix(),
+                    route.getRateLimitRequests(),
+                    route.getRateLimitWindowSeconds(),
+                    route.getMaxPayloadSizeMb(),
+                    route.isEnabled());
 
             var routeBuilder = GatewayRouterFunctions.route(route.getId())
                     .route(
                             GatewayRequestPredicates.path(route.getPublicPath()),
-                            HandlerFunctions.http(route.getTargetUri())
+                            request -> forwardRequest(request, route)
                     );
-
-            if (route.getStripPrefix() > 0) {
-                log.info("Applying stripPrefix={} for route {}", route.getStripPrefix(), route.getId());
-                routeBuilder = routeBuilder.filter(stripPrefix(route.getStripPrefix()));
-            }
 
             builder.add(routeBuilder.build());
         }
 
-        // If no routes are configured, add a default health check route to prevent build() failure
         if (activeRoutes.isEmpty()) {
-            log.warn("No active routes found in database. Adding default health check route.");
+            log.warn("No active routes found in DB. Adding fallback health route.");
             builder.add(
-                RouterFunctions.route()
-                    .GET("/health", request -> ServerResponse.ok()
-                        .body("Gateway is running. No routes configured. Please add routes via API."))
-                    .build()
+                    RouterFunctions.route()
+                            .GET("/health", request -> ServerResponse.ok()
+                                    .body("Gateway is running. No routes configured."))
+                            .build()
             );
         }
 
         log.info("Dynamic gateway route registration complete. Built router with {} routes.", activeRoutes.size());
         return builder.build();
+    }
+
+    private ServerResponse forwardRequest(ServerRequest request, GatewayRoute route) {
+        if (!RateLimitFilter.checkRateLimit(request, route)) {
+            return ServerResponse.status(429)
+                    .body("Rate limit exceeded: " + route.getRateLimitRequests() +
+                            " requests per " + route.getRateLimitWindowSeconds() + " seconds");
+        }
+
+        if (!PayloadSizeFilter.checkPayloadSize(request, route)) {
+            return ServerResponse.status(413)
+                    .body("Payload too large. Maximum size: " + route.getMaxPayloadSizeMb() + " MB");
+        }
+
+        String upstreamUrl = buildUpstreamUrl(request, route);
+        log.info("Forwarding {} {} -> {}", request.methodName(), request.path(), upstreamUrl);
+
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(upstreamUrl));
+
+            String method = request.methodName();
+            String forwardedFor = request.headers().firstHeader("X-Forwarded-For");
+            if (forwardedFor == null || forwardedFor.isBlank()) {
+                forwardedFor = "unknown";
+            }
+            builder.header("X-Forwarded-For", forwardedFor);
+
+            String host = request.headers().firstHeader("Host");
+            if (host != null && !host.isBlank()) {
+                builder.header("X-Forwarded-Host", host);
+            } else {
+                builder.header("X-Forwarded-Host", "localhost");
+            }
+
+
+            if ("GET".equalsIgnoreCase(method)) {
+                builder.GET();
+            } else if ("POST".equalsIgnoreCase(method)) {
+                String body = request.body(String.class);
+                builder.POST(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
+            } else if ("PUT".equalsIgnoreCase(method)) {
+                String body = request.body(String.class);
+                builder.PUT(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
+            } else if ("DELETE".equalsIgnoreCase(method)) {
+                builder.DELETE();
+            } else {
+                builder.method(method, HttpRequest.BodyPublishers.noBody());
+            }
+
+            HttpRequest httpRequest = builder.build();
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            String responseBody = response.body();
+            String contentType = request.headers().firstHeader(HttpHeaders.CONTENT_TYPE);
+            if (contentType != null && !contentType.isBlank()) {
+                builder.header(HttpHeaders.CONTENT_TYPE, contentType);
+            } else {
+                builder.header(HttpHeaders.CONTENT_TYPE, "application/json");
+            }
+
+            return ServerResponse
+                    .status(response.statusCode())
+                    .header(HttpHeaders.CONTENT_TYPE, contentType)
+                    .body(responseBody);
+
+        } catch (Exception e) {
+            log.error("Proxy error for route {} to {}", route.getId(), upstreamUrl, e);
+            return ServerResponse.status(502)
+                    .body("Bad Gateway: " + e.getMessage());
+        }
+    }
+
+    private String buildUpstreamUrl(ServerRequest request, GatewayRoute route) {
+        String target = route.getTargetUri().replaceAll("/+$", "");
+        String reqPath = request.path();
+
+        String suffix = reqPath;
+
+        if (route.getStripPrefix() > 0) {
+            String[] parts = reqPath.split("/");
+            StringBuilder rebuilt = new StringBuilder();
+
+            for (int i = route.getStripPrefix() + 1; i < parts.length; i++) {
+                if (parts[i] != null && !parts[i].isBlank()) {
+                    rebuilt.append("/").append(parts[i]);
+                }
+            }
+
+            suffix = rebuilt.length() == 0 ? "/" : rebuilt.toString();
+        }
+
+        if (suffix == null || suffix.isBlank() || "/".equals(suffix)) {
+            return target;
+        }
+
+        return target + suffix;
     }
 }

@@ -33,4 +33,13 @@ public class GatewayRoute {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Column(name = "rate_limit_requests", nullable = false)
+    private int rateLimitRequests = 100;
+
+    @Column(name = "rate_limit_window_seconds", nullable = false)
+    private int rateLimitWindowSeconds = 60;
+
+    @Column(name = "max_payload_size_mb", nullable = false)
+    private int maxPayloadSizeMb = 10;
+
 }
