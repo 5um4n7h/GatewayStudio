@@ -1,58 +1,79 @@
 # GatewayStudio
 
-> **The modern, high-throughput, self-service API Gateway platform built on Java 25 and Spring Cloud Gateway Server Web MVC.**
+> Modern API Gateway platform with dynamic tenant-aware routing, request tracing, policy enforcement, mock upstream simulation, and a self-service admin console.
 
 ## What is GatewayStudio?
 
-GatewayStudio is a next-generation, self-service API Gateway platform engineered to serve as a unified, high-performance entry point for backend microservices. Built on **Java 25** and **Spring Cloud Gateway Server Web MVC**, GatewayStudio simplifies API routing, path rewriting, upstream service integration, and gateway-level policy enforcement while providing a foundation for operational visibility and developer self-service management.
+GatewayStudio is a self-service API gateway built with Java 21, Spring Boot 3.4.3, and Spring Cloud Gateway Server MVC. It provides a flexible routing layer for exposing public-facing API paths and forwarding requests to internal upstream services or embedded mock backends.
+
+The platform combines:
+- dynamic route configuration
+- tenant-aware route registration
+- request correlation and audit logging
+- rate limiting and payload-size enforcement
+- upstream proxying with JDK HttpClient
+- embedded WireMock mock services
+- a React admin interface with Azure AD authentication
+
 
 
 ### Current Request Flow
 
 ```mermaid
 flowchart LR
-    C[Client Request] --> G[GatewayStudio]
-    G --> R[Route Matching]
-    R --> RW[Path Rewriting]
-    RW --> P[Gateway Proxy]
-    P --> U[Upstream API / WireMock]
+  C[Client Request] --> G[GatewayStudio]
+  G --> F[GlobalRequestIdFilter]
+  F --> R[Route Matching]
+  R --> D[DynamicGatewayRouteSupplier]
+  D --> RL[RateLimitFilter]
+  D --> PS[PayloadSizeFilter]
+  RL --> P[Proxy to Upstream]
+  PS --> P
+  P --> U[Upstream API / WireMock]
+  F -.-> ID[X-Request-ID + MDC]
+  G -.-> A[Audit Log + Local JSON Log]
+  ```
 
-    G -.-> ID[X-Request-ID + MDC]
-    P -.-> HTTP[Spring RestClient + JDK HttpClient]
-```
+## Key Capabilities Implemented
 
-### Key Capabilities Implemented
+- Dynamic Routing & Path Forwarding
+  - Public-facing routes are matched and forwarded to configured upstream targets.
+  - Route resolution is tenant-aware and supports lazy route loading per tenant.
 
-- **Routing & Path Rewriting**  
-  Translates public-facing routes into internal upstream endpoints.
+- Tenant-Aware Route Management
+  - Routes are persisted in PostgreSQL and exposed through admin APIs.
+  - Administrators can list, create, delete, enable/disable, and bulk-update routes by tenant.
 
-- **Embedded Upstream Mocking**  
-  Integrates WireMock for local integration testing, upstream response simulation, delay simulation, and fault scenarios.
+- Request Correlation & Audit Logging
+  - A global request filter generates a UUID-based X-Request-ID.
+  - The request ID is added to MDC and response headers for end-to-end request tracing.
+  - HTTP request metadata is logged to a local JSON audit log for observability and debugging.
 
-- **Request Correlation & Tracing**  
-  A global request filter generates and propagates `X-Request-ID` while maintaining an MDC context for request correlation across gateway logs and downstream services.
+- Gateway Policy Enforcement
+  - Per-route rate limiting prevents abuse and protects upstream dependencies.
+  - Payload size validation blocks oversized requests based on route configuration.
+  - Disabled routes are explicitly rejected with a 503 response.
 
-- **Audit logging**  
-  API request metadata logs are storing in JSON format, for further process and analytics.
+- Embedded Upstream Mocking
+  - WireMock is started automatically for local testing and mock service simulation.
+  - This supports integration testing, response simulation, and fault injection without external dependencies.
+
+- Self-Service Admin Console
+  - A React frontend allows route management, tenant switching, and operational visibility.
+  - Azure AD authentication is integrated for secure access to admin workflows.
+
+- Proxying & Upstream Integration
+  - Request forwarding uses the Java HTTP client and Spring Cloud Gateway MVC proxying.
+  - Upstream services can be internal APIs, external services, or local mock endpoints.
 
 ## 🚀 Roadmap & What's Next
 
 GatewayStudio is evolving from a core proxy engine into a full-featured API management platform.
 
-- 🛠️ **Self-Service Route & Service Management**  
-  Dynamic route and upstream service management through a self-service administrative interface.
-
-- 🔐 **Authentication & Authorization**  
-  Edge security capabilities including API authentication, OAuth2/JWT integration, and access controls.
-
-- 🚦 **Traffic Shaping & Resilience Policies**  
-  Rate limiting, request throttling, circuit breaking, retries, and other gateway-level policies.
-
-- 💾 **Persistent Dynamic Configuration**  
-  Database-backed configuration and controlled route publishing without requiring application restarts.
-
-- 📊 **Analytics & Audit Logging**  
-  Request analytics, audit trails, and enhanced operational visibility.
-
-- ☁️ **Production-Grade Cloud Deployment**  
-  Containerized deployment with support for scalable, cloud-native environments.
+- OAuth2/JWT authentication and authorization
+- advanced traffic shaping and resiliency policies
+- multi-tenant policy and service catalogs
+- persistent governance workflows
+- more advanced analytics dashboards
+- production-grade deployment and autoscaling
+- stronger cloud-native security and observability
