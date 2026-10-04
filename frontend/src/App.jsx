@@ -32,8 +32,8 @@ const formatDate = (value) => {
 };
 
 export default function App() {
-    const {instance, accounts} = useMsal();
-    const isAuthenticated = accounts.length > 0;
+    const { instance, accounts, inProgress } = useMsal();
+    const isAuthenticated = inProgress === "none" && accounts.length > 0;
 
     const getAccessToken = async () => {
         if (!isAuthenticated) {
@@ -47,14 +47,18 @@ export default function App() {
     };
 
     const handleLogout = () => {
-        instance.logoutRedirect();
+        instance.setActiveAccount(null);
+        sessionStorage.clear();
+        localStorage.clear();
+        window.location.href = "http://localhost:5173";
     };
+
     const handleMicrosoftLogin = () => {
-    instance.loginRedirect({
-        scopes: ["openid", "profile", "User.Read"],
-        prompt: "select_account"
-    });
-};
+        instance.loginRedirect({
+            scopes: ["openid", "profile", "User.Read"],
+            prompt: "select_account"
+        });
+    };
 
     const userName = accounts[0]?.username || "User";
     const [tenantId, setTenantId] = useState(DEFAULT_TENANT);
@@ -280,6 +284,23 @@ export default function App() {
             setLoading(false);
         }
     };
+    if (inProgress !== "none") {
+        return (
+            <div className="app-shell">
+                <div style={{
+                    maxWidth: "420px",
+                    margin: "120px auto",
+                    padding: "32px",
+                    borderRadius: "12px",
+                    background: "rgba(255, 255, 255, 0.9)",
+                    color: "#ffffff",
+                    textAlign: "center"
+                }}>
+                    <h2>Signing in...</h2>
+                </div>
+            </div>
+        );
+    }
 
     if (!isAuthenticated) {
         return (
@@ -294,7 +315,7 @@ export default function App() {
                     textAlign: "center",
                     boxShadow: "0 12px 30px rgba(0,0,0,0.25)"
                 }}>
-                    <h2 style={{marginBottom: "16px"}}>Gateway Studio</h2>
+                    <h2 style={{marginBottom: "16px", color: "#cbd5e1"}}>Gateway Studio</h2>
                     <p style={{marginBottom: "24px", color: "#cbd5e1"}}>
                         Sign in with your Microsoft account to access routes
                     </p>

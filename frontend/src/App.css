@@ -59,7 +59,6 @@ button, input {
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--primary);
 }
 
 .topbar h1 {
