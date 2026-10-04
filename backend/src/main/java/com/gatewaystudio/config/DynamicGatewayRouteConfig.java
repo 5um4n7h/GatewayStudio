@@ -10,14 +10,24 @@ import org.springframework.web.servlet.function.ServerResponse;
 
 @Configuration
 public class DynamicGatewayRouteConfig {
-
     private static final Logger log = LoggerFactory.getLogger(DynamicGatewayRouteConfig.class);
 
     @Bean
     public RouterFunction<ServerResponse> dynamicGatewayRoutes(DynamicGatewayRouteSupplier supplier) {
-        log.info("Building dynamic gateway RouterFunction from DynamicGatewayRouteSupplier");
-        RouterFunction<ServerResponse> router = supplier.get();
-        log.info("Dynamic gateway RouterFunction built successfully");
-        return router;
+        log.info("Building lazy-loading dynamic gateway RouterFunction");
+
+        // Return a router that loads routes per tenant on each request
+        return (request) -> {
+            String tenantId = request.headers().firstHeader("X-Tenant-ID");
+            if (tenantId == null || tenantId.isBlank()) {
+                tenantId = "TNT001"; // default fallback
+            }
+
+            log.debug("Processing request for tenantId: {}", tenantId);
+
+            // Get or load routes for this tenant
+            RouterFunction<ServerResponse> tenantRouter = supplier.getRouterForTenant(tenantId);
+            return tenantRouter.route(request);
+        };
     }
 }

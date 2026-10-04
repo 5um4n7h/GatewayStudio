@@ -21,13 +21,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 @Component
 public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<ServerResponse>> {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicGatewayRouteSupplier.class);
-
+    private final Map<String, RouterFunction<ServerResponse>> tenantRouterCache = new ConcurrentHashMap<>();
     private final JpaGatewayRoute repository;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_2)
@@ -40,21 +42,33 @@ public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<Serv
 
     @Override
     public RouterFunction<ServerResponse> get() {
-        RouterFunctions.Builder builder = RouterFunctions.route();
-        List<GatewayRoute> activeRoutes = repository.findByEnabledTrue();
+        // Legacy method for backward compatibility - loads default tenant
+        return getRouterForTenant("TNT001");
+    }
 
-        log.info("Loading dynamic gateway routes from database. Active route count: {}", activeRoutes.size());
+    /**
+     * Get or load routes for a specific tenant (lazy-loaded on first request)
+     */
+    public RouterFunction<ServerResponse> getRouterForTenant(String tenantId) {
+        return tenantRouterCache.computeIfAbsent(tenantId, tid -> {
+            log.info("Building routes for tenant: {}", tid);
+            return buildRouterForTenant(tid);
+        });
+    }
+
+    /**
+     * Build the actual router for a tenant
+     */
+    private RouterFunction<ServerResponse> buildRouterForTenant(String tenantId) {
+        RouterFunctions.Builder builder = RouterFunctions.route();
+        List<GatewayRoute> activeRoutes = repository.findByTenantId(tenantId);
+
+        log.info("Loading dynamic gateway routes for tenant: {}. Active route count: {}",
+                tenantId, activeRoutes.size());
 
         for (GatewayRoute route : activeRoutes) {
-            log.info("Registering route: id={}, name={}, publicPath={}, targetUri={}, stripPrefix={}, rateLimit={}/{}, maxPayloadSize={} MB, enabled={}",
-                    route.getId(),
-                    route.getPublicPath(),
-                    route.getTargetUri(),
-                    route.getStripPrefix(),
-                    route.getRateLimitRequests(),
-                    route.getRateLimitWindowSeconds(),
-                    route.getMaxPayloadSizeMb(),
-                    route.isEnabled());
+            log.info("Registering route for tenant {}: id={}, name={}, publicPath={}",
+                    tenantId, route.getId(), route.getRouteName(), route.getPublicPath());
 
             var routeBuilder = GatewayRouterFunctions.route(route.getId())
                     .route(
@@ -66,20 +80,37 @@ public class DynamicGatewayRouteSupplier implements Supplier<RouterFunction<Serv
         }
 
         if (activeRoutes.isEmpty()) {
-            log.warn("No active routes found in DB. Adding fallback health route.");
+            log.warn("No active routes found for tenant: {}. Adding fallback health route.", tenantId);
             builder.add(
                     RouterFunctions.route()
                             .GET("/health", request -> ServerResponse.ok()
-                                    .body("Gateway is running. No routes configured."))
+                                    .body("Gateway is running for tenant: " + tenantId + ". No routes configured."))
                             .build()
             );
         }
-
-        log.info("Dynamic gateway route registration complete. Built router with {} routes.", activeRoutes.size());
+        log.info("Dynamic gateway route registration complete for tenant: {}. Built router with {} routes.",
+                tenantId, activeRoutes.size());
         return builder.build();
     }
 
+    /**
+     * Refresh routes for a specific tenant (call this when routes are updated via admin API)
+     */
+    public void refreshTenantRoutes(String tenantId) {
+        log.info("Refreshing routes for tenant: {}", tenantId);
+        tenantRouterCache.remove(tenantId);
+        getRouterForTenant(tenantId); // Pre-load the refreshed routes
+    }
+
+
     private ServerResponse forwardRequest(ServerRequest request, GatewayRoute route) {
+
+        if (!route.isEnabled()) {
+            log.warn("Blocked request for disabled route: {}", route.getId());
+            return ServerResponse.status(503)
+                    .body("Service Unavailable: Route is disabled.");
+        }
+
         if (!RateLimitFilter.checkRateLimit(request, route)) {
             return ServerResponse.status(429)
                     .body("Rate limit exceeded: " + route.getRateLimitRequests() +
