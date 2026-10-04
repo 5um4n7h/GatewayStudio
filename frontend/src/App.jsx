@@ -1,9 +1,9 @@
 import {useEffect, useMemo, useState} from "react";
+import {useMsal} from "@azure/msal-react";
 import "./App.css";
 
 const ROUTE_API = "/api/v1/admin/routes";
 const TENANTS_API = "/api/v1/admin/routes/tenants";
-
 const DEFAULT_TENANT = "TNT001";
 
 const emptyForm = {
@@ -32,6 +32,31 @@ const formatDate = (value) => {
 };
 
 export default function App() {
+    const {instance, accounts} = useMsal();
+    const isAuthenticated = accounts.length > 0;
+
+    const getAccessToken = async () => {
+        if (!isAuthenticated) {
+            throw new Error("User not authenticated");
+        }
+        const response = await instance.acquireTokenSilent({
+            account: accounts[0],
+            scopes: ["openid", "profile", "User.Read"],
+        });
+        return response.accessToken;
+    };
+
+    const handleLogout = () => {
+        instance.logoutRedirect();
+    };
+    const handleMicrosoftLogin = () => {
+    instance.loginRedirect({
+        scopes: ["openid", "profile", "User.Read"],
+        prompt: "select_account"
+    });
+};
+
+    const userName = accounts[0]?.username || "User";
     const [tenantId, setTenantId] = useState(DEFAULT_TENANT);
     const [tenants, setTenants] = useState([]);
     const [tenantsLoading, setTenantsLoading] = useState(true);
@@ -54,30 +79,41 @@ export default function App() {
         ];
     }, [routes]);
 
-    // Fetch all available tenants
     const fetchTenants = async () => {
+        if (!isAuthenticated) return;
+
         setTenantsLoading(true);
         try {
-            const response = await fetch(TENANTS_API);
+            const token = await getAccessToken();
+            const response = await fetch(TENANTS_API, {
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                },
+            });
+
             if (!response.ok) {
                 throw new Error("Failed to fetch tenants");
             }
+
             const data = await response.json();
             setTenants(data || []);
         } catch (error) {
             console.error("Error fetching tenants:", error);
-            setTenants([DEFAULT_TENANT]); // Fallback
+            setTenants([DEFAULT_TENANT]);
         } finally {
             setTenantsLoading(false);
         }
     };
 
-    // Fetch routes for current tenant
     const fetchRoutes = async (tid = tenantId) => {
+        if (!isAuthenticated) return;
+
         setLoading(true);
         try {
+            const token = await getAccessToken();
             const response = await fetch(ROUTE_API, {
                 headers: {
+                    "Authorization": `Bearer ${token}`,
                     "X-Tenant-ID": tid,
                 },
             });
@@ -97,15 +133,15 @@ export default function App() {
         }
     };
 
-    // Load tenants on component mount
     useEffect(() => {
+        if (!isAuthenticated) return;
         fetchTenants();
-    }, []);
+    }, [isAuthenticated]);
 
-    // Load routes when tenant changes
     useEffect(() => {
+        if (!isAuthenticated) return;
         fetchRoutes(tenantId);
-    }, [tenantId]);
+    }, [tenantId, isAuthenticated]);
 
     // Handle tenant selection
     const handleTenantChange = (event) => {
@@ -137,10 +173,12 @@ export default function App() {
         };
 
         try {
+            const token = await getAccessToken();
             const response = await fetch(ROUTE_API, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`,
                     "X-Tenant-ID": tenantId,
                 },
                 body: JSON.stringify(payload),
@@ -166,10 +204,12 @@ export default function App() {
 
     const handleDeleteRoute = async (routeId) => {
         try {
+            const token = await getAccessToken();
             const response = await fetch(`${ROUTE_API}/${routeId}`, {
                 method: "DELETE",
                 headers: {
                     "X-Tenant-ID": tenantId,
+                    "Authorization": `Bearer ${token}`,
                 },
             });
 
@@ -186,10 +226,12 @@ export default function App() {
 
     const handleToggleRoute = async (routeId, nextEnabled) => {
         try {
+            const token = await getAccessToken();
             const response = await fetch(`${ROUTE_API}/${routeId}/enableOrDisableRoute`, {
                 method: "POST",
                 headers: {
                     "X-Tenant-ID": tenantId,
+                    "Authorization": `Bearer ${token}`,
                 },
             });
 
@@ -216,10 +258,12 @@ export default function App() {
     const handleToggleAllRoutes = async (enable) => {
         try {
             setLoading(true);
+            const token = await getAccessToken();
             const resp = await fetch(`${ROUTE_API}/enableAll?enabled=${enable}`, {
                 method: "POST",
                 headers: {
                     "X-Tenant-ID": tenantId,
+                    "Authorization": `Bearer ${token}`,
                 },
             });
             if (!resp.ok) {
@@ -236,6 +280,42 @@ export default function App() {
             setLoading(false);
         }
     };
+
+    if (!isAuthenticated) {
+        return (
+            <div className="app-shell">
+                <div style={{
+                    maxWidth: "420px",
+                    margin: "120px auto",
+                    padding: "32px",
+                    borderRadius: "12px",
+                    background: "#111827",
+                    color: "#fff",
+                    textAlign: "center",
+                    boxShadow: "0 12px 30px rgba(0,0,0,0.25)"
+                }}>
+                    <h2 style={{marginBottom: "16px"}}>Gateway Studio</h2>
+                    <p style={{marginBottom: "24px", color: "#cbd5e1"}}>
+                        Sign in with your Microsoft account to access routes
+                    </p>
+                    <button
+                        onClick={handleMicrosoftLogin}
+                        style={{
+                            background: "#2563eb",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "8px",
+                            padding: "12px 20px",
+                            fontSize: "16px",
+                            cursor: "pointer"
+                        }}
+                    >
+                        Sign in with Microsoft
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="app-shell">
@@ -262,23 +342,24 @@ export default function App() {
                         </select>
                     </div>
 
-                    {/* Enable/Disable All button — label depends on routes state */}
                     <button
-                        className="btn btn-warning"
-                        onClick={() => {
-                            // if any disabled route => enable all, otherwise disable all
-                            const anyDisabled = routes.some((r) => !r.enabled);
-                            handleToggleAllRoutes(anyDisabled); // if anyDisabled true -> enable all
-                        }}
-                        disabled={loading || routes.length === 0}
-                        title="Enable or Disable all routes for the selected tenant"
+                        className="btn btn-secondary"
+                        onClick={() => fetchRoutes()}
+                        disabled={loading}
                     >
-                        {routes.length === 0 ? "No routes" : routes.some((r) => !r.enabled) ? "Enable All" : "Disable All"}
-                    </button>
-
-                    <button className="btn btn-secondary" onClick={() => fetchRoutes()} disabled={loading}>
                         {loading ? "Refreshing..." : "Refresh"}
                     </button>
+
+                    <button
+                        className="btn btn-danger"
+                        onClick={handleLogout}
+                        type="button"
+                    >
+                        Logout
+                    </button>
+                    <span style={{marginRight: "12px", color: "#cbd5e1"}}>
+    {userName}
+</span>
                 </div>
             </header>
 
